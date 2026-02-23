@@ -62,7 +62,14 @@ function isString(obj: any): obj is string {
 function tag_refinement(images: IImage): void {
     if (images.tags) {
         if (isString(images.tags)) {
-            images.tags = JSON.parse('{"tags":'+images.tags.toString().replace(/&#34;/gi, '"')+'}')["tags"]; // remove &quot;(HTML special characters) and string to String Array
+            let vaild_tag_check_temp = images.tags.toString();
+            if (vaild_tag_check_temp === "null") { // Image tag Not existing image
+                images.tags = []; // If tags is (null), the image will not be displayed. Therefore, it is set to an empty list.
+            }
+            else {
+                vaild_tag_check_temp = vaild_tag_check_temp.replace(/&#34;/gi, '"'); // remove &quot;(HTML special characters)
+                images.tags = JSON.parse('{"tags":'+vaild_tag_check_temp+'}')["tags"];
+            }
         }
         // I don't think ITag[] will ever be used as an argument in this function.
         /*else if (isITagArr(images.tags)) {
@@ -271,7 +278,7 @@ export const source: ISource = {
                     if (!src.match(/^<!DOCTYPE html>\s+<html>/)) {
                         return { error: "Server Error(HTTP" + statusCode.toString() + "): " + src };
                     }
-                    const images = Grabber.regexToImages('<div\\s+data-context-menu="thumbnail"\\s+data-id="(?<id>\\d+)"\\s+data-sha256="(?<sha256>\\p{Hex_Digit}{64})"\\s+data-md5="(?<md5>\\p{Hex_Digit}{32})"\\s+data-tags="(?<tags>\\[(&#34;(?:(?!(?<!\\\\)&#34;).)+&#34;,?)+\\])"\\s+data-file-url="(?<file_url>[\\/\\.\\d\\w]+)"\\s+class="thumbnail (image|video|application)\\s+" >\\s+(<img src="(?<preview_url>[\\d\\w\\/\\.]+)" alt="\\p{Hex_Digit}{64}" class="">\\s+<div class="tagbox hint">\\s+<div class="score">\\s+<div><span>[\\w\\d\\s]+</span></div>\\s+<div><span>Score:\\s+(?<score>[\\d.]+)</span></div>)?', src);
+                    const images = Grabber.regexToImages('<div\\s+data-context-menu="thumbnail"\\s+data-id="(?<id>\\d+)"\\s+data-sha256="(?<sha256>\\p{Hex_Digit}{64})"\\s+data-md5="(?<md5>\\p{Hex_Digit}{32})"\\s+data-tags="(?<tags>[^"]+)"\\s+data-file-url="(?<file_url>[\\/\\.\\d\\w]+)"\\s+class="thumbnail (image|video|application)\\s+" >\\s+(<img src="(?<preview_url>[\\d\\w\\/\\.]+)" alt="\\p{Hex_Digit}{64}" class="">\\s+<div class="tagbox hint">\\s+<div class="score">\\s+<div><span>[\\w\\d\\s]+</span></div>\\s+<div><span>Score:\\s+(?<score>[\\d.]+)</span></div>)?', src);
                     const imageCount = Grabber.regexMatch('<div id="sidebar">\\s+<div>(?<image_count>\\d+)</div>', src);
                     const page_navigator = Grabber.regexMatch('<div class="paginator">\\s+(<span(><a href="(?<first_page_url>/posts/(?<first_page_number>\\d+)(/[^"]*)?)">First</a>|><a href="(?<previous_page_url>/posts/(?<previous_page_number>\\d+)(/[^"]*)?)">Previous</a>| class="current-page">(?<current_page_number>\\d+)|><a href="(?<next_page_url>/posts/(?<next_page_number>\\d+)(/[^"]*)?)">Next</a>|><a href="(?<last_page_url>/posts/(?<last_page_number>\\d+)(/[^"]*)?)">Last</a>|><a href="/posts/\\d+(/[^"]*)?">\\d+</a>)+</span>\\s+)+</div>', src);
                     const img_tags = Grabber.regexToTags('<tr>\\s+<td class="tag namespace-(?<type>none|rating|meta|medium|series|gender|species|creator|character|[^"]+)">\\s+<span class="tag-toggle" data-tag="[^"]+">\\+</span>\\s+<a href="[^"]+"><span>(?<name>[^"]+)</span></a>\\s+</td>\\s+<td class="counter">(?<count>\\d+)</td>\\s+</tr>', src);

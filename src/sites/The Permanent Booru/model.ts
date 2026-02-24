@@ -1651,6 +1651,11 @@ function recover_html_entity(html_str: string): string {
         return html_str.replace(/&#\d+;/g, (matched) => html_entity_normal_character_maps[matched] || matched);
 }
 
+// wrapper traveling the name of the ITag
+function recover_html_entity_itag_wrapper(tag: ITag): void {
+    tag.name = recover_html_entity(tag.name);
+}
+
 // -------- Custom Function End --------
 
 export const source: ISource = {
@@ -1740,6 +1745,7 @@ export const source: ISource = {
                     images.forEach(fill_placeholder_preview);
                     images.forEach(fill_rating_from_string_tag);
                     img_tags.forEach(tag_type_compat);
+                    img_tags.forEach(recover_html_entity_itag_wrapper);
                     return {
                         images: images,
                         imageCount: imageCount ? imageCount.hasOwnProperty("image_count") ? parseInt(imageCount["image_count"], 10) : 0 : 0,
@@ -1762,6 +1768,7 @@ export const source: ISource = {
                 parse: (src: string): IParsedDetails => {
                     const img_tags = Grabber.regexToTags('<tr>\\s+<td class="tag namespace-(?<type>none|rating|meta|medium|series|gender|species|creator|character|[^"]+)">\\s+<span class="tag-toggle" data-tag="[^"]+">\\+</span>\\s+<a href="[^"]+"><span>(?<name>[^"]+)</span></a>\\s+</td>\\s+<td class="counter">(?<count>\\d+)</td>\\s+</tr>', src);
                     img_tags.forEach(tag_type_compat);
+                    img_tags.forEach(recover_html_entity_itag_wrapper);
                     return {
                         tags: img_tags,
                         imageUrl: Grabber.regexToConst("url", '<a href="(?<url>[\\d\\w\\/\\.]+)" download>Download</a>', src),
@@ -1864,6 +1871,7 @@ export const source: ISource = {
                 parse: (src: string): IParsedTags => {
                     const parsed_tags = Grabber.regexToTags('<div class="tag-toggle" data-tag="[^"]+">\\+</div>\\s+<div class="tag namespace-(?<type>none|rating|meta|medium|series|gender|species|creator|character|[^"]+)"><a href="/tags/\\d+/(?<id>\\d+)">(?<name>[^<]+)</a></div>\\s+<div class="count">(?<count>\\d+)</div>', src);
                     parsed_tags.forEach(tag_type_compat);
+                    parsed_tags.forEach(recover_html_entity_itag_wrapper);
                     return {
                         tags: parsed_tags,
                     };

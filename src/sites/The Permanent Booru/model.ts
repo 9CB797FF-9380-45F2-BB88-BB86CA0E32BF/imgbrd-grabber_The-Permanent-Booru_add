@@ -122,8 +122,11 @@ function fill_placeholder_preview(images: IImage): void {
 // Returns the extracted tags as a string separated by commas.
 function extracted_tags_to_string(tags: ITag[]): string {
     let result = String();
+    let tag_temp = String();
     for (let tag_index = 0; tag_index < tags.length; tag_index++) {
-        result = result.concat(tags[tag_index].name);
+        tag_temp = tags[tag_index].name.trim(); // Remove left and right spaces
+        tag_temp = tag_temp.replace(/^(~[!|+])\s?/, ''); // Remove prefix, For spaces between prefixes and words, use lazy quantifiers by limiting to 1 in the Grabber.regexToTags function.
+        result = result.concat(tag_temp);
         if (tag_index < tags.length - 1) {
             result = result.concat(", ");
         }
@@ -134,12 +137,13 @@ function extracted_tags_to_string(tags: ITag[]): string {
 // Separate search tags
 // Prefix: (no prefix):And, ~|:Or, ~!:Filter, ~+:Unless
 // The Permanent Booru's tags will not be searched as intended if they match the prefixes used by the search keyword parser.
+// The search parser currently appears to be functioning normally, but it may fail due to various tags in The Permanent Booru that do not conform to its rules. Therefore, we need your feedback.
 function search_keyword_parser(search_query: ISearchQuery): Record<string, any>  {
     const parsed_keyword: Record<string, any> = {};
-    const extracted_tags_and = Grabber.regexToTags("(?<name>(?:(?<![^\\s~\\|!\\+\\,])(?=[^\\s~\\|!\\+\\,])|(?<=[^\\s~\\|!\\+\\,])(?![^\\s~\\|!\\+\\,]))(?<!(?:~\\||~!|~\\+))[^,]+)", search_query.search);
-    const extracted_tags_filter = Grabber.regexToTags("(?<name>(?<=~!)((?!~\\||~!|~\\+|,).)*)", search_query.search);
-    const extracted_tags_or = Grabber.regexToTags("(?<name>(?<=~\\|)((?!~\\||~!|~\\+|,).)*)", search_query.search);
-    const extracted_tags_unless = Grabber.regexToTags("(?<name>(?<=~\\+)((?!~\\||~!|~\\+|,).)*)", search_query.search);
+    const extracted_tags_and = Grabber.regexToTags("(?<name>(?:^|(?<!\\\\,)(?<=,))(?!\\s*(?:~[+|!]))(?:\\\\,|[^,])+(?:(?=,)|$))", search_query.search); // Hints about AND regular expressions came from generative artificial intelligence(Gemini-3.1-Pro).
+    const extracted_tags_filter = Grabber.regexToTags("(?<name>(?<![^,]|\\\\,)(?=\\s*~!)(?:\\\\,|[^,])+)", search_query.search);
+    const extracted_tags_or = Grabber.regexToTags("(?<name>(?<![^,]|\\\\,)(?=\\s*~\\|)(?:\\\\,|[^,])+)", search_query.search);
+    const extracted_tags_unless = Grabber.regexToTags("(?<name>(?<![^,]|\\\\,)(?=\\s*~\\+)(?:\\\\,|[^,])+)", search_query.search);
     parsed_keyword["and"] = extracted_tags_to_string(extracted_tags_and);
     parsed_keyword["filter"] = extracted_tags_to_string(extracted_tags_filter);
     parsed_keyword["or"] = extracted_tags_to_string(extracted_tags_or);

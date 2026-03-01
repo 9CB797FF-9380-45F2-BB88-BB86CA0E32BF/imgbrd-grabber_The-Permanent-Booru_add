@@ -29,6 +29,8 @@
  * /post/md5/<image_md5> -> image select by md5
  * /post/sha256/<image_sha256> -> image select by sha256
  * /api/v1/posts -> Image List API(JSON), more info:https://github.com/Kycklingar/pbooru-downloader
+ * /tombstone/ -> List of images removed from their original source sites (with reasons)
+ * /dns/ -> Link to the artist's SNS or art posting site
 */
 
 /* This booru sets the number of images per page as OPTION method instead of passing it as GET method.
@@ -60,7 +62,7 @@ function isString(obj: any): obj is string {
 // -------- Static Map Start --------
 
 // tag type name -> tag type ID
-const TAG_NAME_TO_TTYPE_ID_MAP: Record<string, any> = {
+const TAG_NAME_TO_TTYPE_ID_MAP: Record<string, number> = {
     "none": 0,
     "rating": 1,
     "meta": 2,
@@ -73,7 +75,7 @@ const TAG_NAME_TO_TTYPE_ID_MAP: Record<string, any> = {
 };
 
 // tag namespace -> tag type name
-const TAG_NAME_TO_GRB_TTYPE_MAP: Record<string, any> = {
+const TAG_NAME_TO_GRB_TTYPE_MAP: Record<string, string> = {
     "none": "general",
     "rating": "meta",
     "meta": "meta",
@@ -1604,10 +1606,10 @@ function extracted_tags_to_string(tags: ITag[]): string {
     let tag_temp = String();
     for (let tag_index = 0; tag_index < tags.length; tag_index++) {
         tag_temp = tags[tag_index].name.trim(); // Remove left and right spaces
-        tag_temp = tag_temp.replace(/^(~[!|+])\s?/, ''); // Remove prefix, For spaces between prefixes and words, use lazy quantifiers by limiting to 1 in the Grabber.regexToTags function.
+        tag_temp = tag_temp.replace(/^(~[!|+@])\s?/, ''); // Remove prefix, For spaces between prefixes and words, use lazy quantifiers by limiting to 1 in the Grabber.regexToTags function.
         result = result.concat(tag_temp);
         if (tag_index < tags.length - 1) {
-            result = result.concat(", ");
+            result = result.concat(',');
         }
     }
     return result;
@@ -1619,14 +1621,16 @@ function extracted_tags_to_string(tags: ITag[]): string {
 // The search parser currently appears to be functioning normally, but it may fail due to various tags in The Permanent Booru that do not conform to its rules. Therefore, we need your feedback.
 function search_keyword_parser(search_query: ISearchQuery): Record<string, any>  {
     const parsed_keyword: Record<string, any> = {};
-    const extracted_tags_and = Grabber.regexToTags("(?<name>(?:^|(?<!\\\\,)(?<=,))(?!\\s*(?:~[+|!]))(?:\\\\,|[^,])+(?:(?=,)|$))", search_query.search); // Hints about AND regular expressions came from generative artificial intelligence(Gemini-3.1-Pro).
+    const extracted_tags_and = Grabber.regexToTags("(?<name>(?:^|(?<!\\\\,)(?<=,))(?!\\s*(?:~[+|!@]))(?:\\\\,|[^,])+(?:(?=,)|$))", search_query.search); // Hints about AND regular expressions came from generative artificial intelligence(Gemini-3.1-Pro).
     const extracted_tags_filter = Grabber.regexToTags("(?<name>(?<![^,]|\\\\,)(?=\\s*~!)(?:\\\\,|[^,])+)", search_query.search);
     const extracted_tags_or = Grabber.regexToTags("(?<name>(?<![^,]|\\\\,)(?=\\s*~\\|)(?:\\\\,|[^,])+)", search_query.search);
     const extracted_tags_unless = Grabber.regexToTags("(?<name>(?<![^,]|\\\\,)(?=\\s*~\\+)(?:\\\\,|[^,])+)", search_query.search);
+    const extracted_advanced_option = Grabber.regexToTags("(?<name>(?<![^,]|\\\\,)(?=\\s*~@)(?:\\\\,|[^,])+)", search_query.search);
     parsed_keyword["and"] = extracted_tags_to_string(extracted_tags_and);
     parsed_keyword["filter"] = extracted_tags_to_string(extracted_tags_filter);
     parsed_keyword["or"] = extracted_tags_to_string(extracted_tags_or);
     parsed_keyword["unless"] = extracted_tags_to_string(extracted_tags_unless);
+    parsed_keyword["advanced"] = extracted_tags_to_string(extracted_advanced_option);
     return parsed_keyword;
 }
 
@@ -1653,13 +1657,13 @@ function regexToSources(regexp: string, src: string): string[] {
 function fill_rating_from_string_tag(images: IImage): void {
     if (images.tags) {
         if (isITagArr(images.tags)) {
-            if (images.tags.filter( (itag) => { return itag.name === "rating:safe"; }).length > 0) {
+            if (images.tags.filter( (itag: ITag) => { return itag.name === "rating:safe"; }).length > 0) {
                 images.rating = "safe";
             }
-            if (images.tags.filter( (itag) => { return itag.name === "rating:questionable"; }).length > 0) {
+            if (images.tags.filter( (itag: ITag) => { return itag.name === "rating:questionable"; }).length > 0) {
                 images.rating = "questionable";
             }
-            if (images.tags.filter( (itag) => { return itag.name === "rating:explicit"; }).length > 0) {
+            if (images.tags.filter( (itag: ITag) => { return itag.name === "rating:explicit"; }).length > 0) {
                 images.rating = "explicit";
             }
         }
@@ -1715,6 +1719,63 @@ function jason_to_iimage(image: Record<string, any>): IImage {
     img.ext = Grabber.regexMatch("(?<=\\.)\\w+$", img.name)[0]; // extension from file name
     img.name = Grabber.regexMatch("(?<=/)\\p{Hex_Digit}{64}", img.name)[0]; // Remove url and extension parts
     return img;
+}
+
+// Creating URL parameters for advanced search options
+function mk_adva_url_para(parameters: string): string {
+    // Collect alts - alts= on | 
+    // Tombstone - tombstone= on | 
+    // Since last - since= day | week | month | year
+    // Order - order= desc | asc | random | score
+    // Mime(multiple) - mime= application | application/x-shockwave-flash | image | image/apng | image/gif | image/jpeg | image/png | video | video/mp4 | video/quicktime | video/webm | video/x-flv | video/x-m4v | video/x-matroska | video/x-msvideo
+    let ret = String();
+    // default option
+    const advanced_search_option: Record<string, any> = {
+        "alts": false,
+        "tombstone": false,
+        "since": "",
+        "order": "desc",
+        "mime": [],
+    };
+    const params = parameters.split(',')
+
+    // Analyzing Advanced Search Options
+    let param = undefined;
+    for (let idx = 0; idx < params.length; idx++) {
+        param = params[idx].split(':');
+        if (param[0] === "alts") {
+            advanced_search_option["alts"] = true;
+        }
+        else if (param[0] === "tombstone") {
+            advanced_search_option["tombstone"] = true;
+        }
+        else if (param[0] === "since") {
+            advanced_search_option["since"] = param[1];
+        }
+        else if (param[0] === "order") {
+            advanced_search_option["order"] = param[1];
+        }
+        else if (param[0] === "mime") {
+            advanced_search_option["mime"].push(param[1]);
+        }
+    }
+    
+    // Generate URL parameters
+    if (advanced_search_option["alts"]) {
+        ret = ret.concat("&alts=on");
+    }
+    if (advanced_search_option["tombstone"]) {
+        ret = ret.concat("&tombstone=on");
+    }
+    if (advanced_search_option["since"] !== "") {
+        ret = ret.concat("&since=" + advanced_search_option["since"]);
+    }
+    ret = ret.concat("&order=" + advanced_search_option["order"]);
+    for (let idx = 0; idx < advanced_search_option["mime"].length; idx++) {
+        ret = ret.concat("&mime=" + encodeURIComponent(advanced_search_option["mime"][idx]));
+    }
+
+    return ret;
 }
 
 // -------- Custom Function End --------
@@ -1788,7 +1849,7 @@ export const source: ISource = {
                         // Since this booru receives the search query as multiple parameters instead of one, it is necessary to properly separate them and pass them to the appropriate parameters.
                         // Prefix: (no prefix):And, ~|:Or, ~!:Filter, ~+:Unless
                         const parsed_keyword = search_keyword_parser(query);
-                        return "/posts/" + vaild_page + '/' + encodeURIComponent(parsed_keyword["and"]) + "?filter=" + encodeURIComponent(parsed_keyword["filter"]) + "&or=" + encodeURIComponent(parsed_keyword["or"]) + "&unless=" + encodeURIComponent(parsed_keyword["unless"]); // query.page is deprecated and should be replaced with opts.page in the future.
+                        return "/posts/" + vaild_page + '/' + encodeURIComponent(parsed_keyword["and"]) + "?filter=" + encodeURIComponent(parsed_keyword["filter"]) + "&or=" + encodeURIComponent(parsed_keyword["or"]) + "&unless=" + encodeURIComponent(parsed_keyword["unless"]) + mk_adva_url_para(parsed_keyword["advanced"]); // query.page is deprecated and should be replaced with opts.page in the future.
                     }
                     catch (e: any) {
                         return { error: e.message };
@@ -1983,7 +2044,7 @@ export const source: ISource = {
                         // Prefix: (no prefix):And, ~|:Or, ~!:Filter, ~+:Unless
                         const vaild_page = Grabber.pageUrl(query.page, previous, Number.MAX_VALUE, "{page}", "{max}", "{min}") - 1; // start at 0
                         const parsed_keyword = search_keyword_parser(query);
-                        return "/api/v1/posts?" + "offset=" + vaild_page + "&tags=" + encodeURIComponent(parsed_keyword["and"]) + "&filter=" + encodeURIComponent(parsed_keyword["filter"]) + "&or=" + encodeURIComponent(parsed_keyword["or"]) + "&unless=" + encodeURIComponent(parsed_keyword["unless"]) + "&mime-type=" + "" + "&order=" + "desc"; // query.page is deprecated and should be replaced with opts.page in the future.
+                        return "/api/v1/posts?" + "offset=" + vaild_page + "&tags=" + encodeURIComponent(parsed_keyword["and"]) + "&filter=" + encodeURIComponent(parsed_keyword["filter"]) + "&or=" + encodeURIComponent(parsed_keyword["or"]) + "&unless=" + encodeURIComponent(parsed_keyword["unless"]) + mk_adva_url_para(parsed_keyword["advanced"]); // query.page is deprecated and should be replaced with opts.page in the future.
                     } catch (e: any) {
                         return { error: e.message };
                     }

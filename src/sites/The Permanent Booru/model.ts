@@ -28,7 +28,7 @@
  * /post/<postID> -> image select by post number
  * /post/md5/<image_md5> -> image select by md5
  * /post/sha256/<image_sha256> -> image select by sha256
- * /api/v1/posts -> Image List API(JSON), more info:https://github.com/Kycklingar/pbooru-downloader
+ * /api/ -> API documentation
  * /tombstone/ -> List of images removed from their original source sites (with reasons)
  * /dns/ -> Link to the artist's SNS or art posting site
  * /candidates -> A page where users vote for images that have different hashes but are actually duplicates (requires JavaScript, need login)
